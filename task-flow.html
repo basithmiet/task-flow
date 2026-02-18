@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TaskFlow — Material Dashboard</title>
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+:root{
+  --bg:#0f172a;
+  --card:#111827;
+  --glass:rgba(255,255,255,0.05);
+  --accent:#6366f1;
+  --success:#22c55e;
+  --danger:#ef4444;
+  --warning:#f59e0b;
+  --text:#ffffff;
+  --muted:#9ca3af;
+}
+
+body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;transition:.3s}
+body.light{--bg:#f3f4f6;--card:#ffffff;--text:#111827;background:#f3f4f6;color:#111827}
+
+.sidebar{width:240px;background:var(--card);position:fixed;top:0;left:0;bottom:0;padding:1.5rem 1rem;border-right:1px solid var(--glass)}
+.sidebar a{display:flex;align-items:center;gap:.75rem;padding:.6rem .8rem;border-radius:10px;color:var(--muted);text-decoration:none;margin-bottom:.4rem;cursor:pointer}
+.sidebar a.active,.sidebar a:hover{background:var(--accent);color:#fff}
+
+.main{margin-left:240px;padding:2rem}
+.card-modern{background:var(--card);border-radius:18px;padding:1.5rem;box-shadow:0 10px 30px rgba(0,0,0,.2);border:1px solid var(--glass)}
+
+.task-card{
+  background:rgba(255,255,255,0.06);
+  border-radius:12px;
+  padding:.75rem;
+  margin-bottom:.75rem;
+  cursor:grab;
+  transition:.2s;
+  border:1px solid transparent;
+}
+
+/* Status based borders */
+.task-card.todo-border{border-color:var(--danger);}        /* Red */
+.task-card.inprogress-border{border-color:var(--warning);} /* Yellow */
+.task-card.done-border{border-color:var(--success);}       /* Green */
+.task-card.overdue{border-left:4px solid var(--danger)}
+.task-card:hover{transform:translateY(-3px)}
+
+.priority-badge{font-size:.7rem;padding:3px 8px;border-radius:12px}
+.priority-low{background:#334155}
+.priority-medium{background:var(--warning)}
+.priority-high{background:var(--danger)}
+
+.kanban-column{min-height:320px;background:rgba(255,255,255,0.03);border-radius:16px;padding:1rem}
+.kanban-column.drag-over{background:rgba(99,102,241,0.15);border:1px dashed var(--accent)}
+
+.view-section{display:none}
+.view-section.active{display:block}
+
+.color-picker{width:40px;height:40px;border:none;background:none}
+
+@media(max-width:992px){.sidebar{position:relative;width:100%;height:auto}.main{margin-left:0}}
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h4>TaskFlow</h4>
+  <a data-view="dashboard" class="active"><i class="bi bi-speedometer2"></i> Dashboard</a>
+  <a data-view="tasks"><i class="bi bi-kanban"></i> Tasks</a>
+  <a data-view="analytics"><i class="bi bi-bar-chart"></i> Analytics</a>
+</div>
+
+<div class="main">
+
+<!-- DASHBOARD -->
+<div id="dashboard" class="view-section active">
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3>Dashboard Overview</h3>
+  <div class="d-flex gap-2 align-items-center">
+    <input type="color" id="accentPicker" class="color-picker" title="Pick Theme Color">
+    <button id="themeToggle" class="btn btn-outline-light btn-sm">Toggle Theme</button>
+    <button id="exportBtn" class="btn btn-outline-success btn-sm">Export JSON</button>
+    <button id="addTaskBtn" class="btn btn-primary btn-sm"><i class="bi bi-plus-lg"></i> New Task</button>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-md-3"><div class="card-modern"><div>Total Tasks</div><div id="totalTasks"></div></div></div>
+  <div class="col-md-3"><div class="card-modern"><div>Completed</div><div id="completedTasks"></div></div></div>
+  <div class="col-md-3"><div class="card-modern"><div>Due Today</div><div id="dueToday"></div></div></div>
+  <div class="col-md-3"><div class="card-modern"><div>Projects</div><div id="projectsCount"></div></div></div>
+</div>
+
+<div class="card-modern mb-4">
+  <h6>Completion Progress</h6>
+  <div class="progress"><div id="progressBar" class="progress-bar" style="width:0%;background:var(--accent)"></div></div>
+</div>
+
+<div class="card-modern">
+  <h5>Kanban Board</h5>
+  <div class="row g-3">
+    <div class="col-md-4"><div class="kanban-column" data-status="todo"><strong>To Do</strong><div class="dropzone"></div></div></div>
+    <div class="col-md-4"><div class="kanban-column" data-status="inprogress"><strong>In Progress</strong><div class="dropzone"></div></div></div>
+    <div class="col-md-4"><div class="kanban-column" data-status="done"><strong>Done</strong><div class="dropzone"></div></div></div>
+  </div>
+</div>
+
+</div>
+
+<!-- TASKS VIEW -->
+<div id="tasks" class="view-section">
+  <div class="card-modern">
+    <h4>All Tasks</h4>
+    <div id="tasksList"></div>
+  </div>
+</div>
+
+<!-- ANALYTICS VIEW -->
+<div id="analytics" class="view-section">
+  <div class="row g-4">
+    <div class="col-lg-4">
+      <div class="card-modern text-center">
+        <h6>Task Distribution</h6>
+        <canvas id="analyticsChart" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-modern">
+        <h6>Status Overview</h6>
+        <canvas id="statusBarChart" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="col-lg-4">
+      <div class="card-modern">
+        <h6>Priority Breakdown</h6>
+        <canvas id="priorityLineChart" height="220"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<div class="modal fade" id="taskModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content p-4 bg-dark text-white">
+      <h5>Create / Edit Task</h5>
+      <input id="taskId" type="hidden">
+      <input id="taskTitle" class="form-control mb-2" placeholder="Task title">
+      <input id="taskProject" class="form-control mb-2" placeholder="Project">
+      <input id="taskDate" type="date" class="form-control mb-2">
+      <select id="taskPriority" class="form-select mb-3">
+        <option value="low">Low</option>
+        <option value="medium">Medium</option>
+        <option value="high">High</option>
+      </select>
+      <div class="d-flex gap-2">
+        <button id="deleteTaskBtn" class="btn btn-danger w-50">Delete</button>
+        <button id="saveTaskBtn" class="btn btn-primary w-50">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+const qs=s=>document.querySelector(s);
+const qsa=s=>document.querySelectorAll(s);
+const STORAGE_KEY='taskflow.tasks.v7';
+let tasks=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');
+let chartInstance=null;
+let statusBarInstance=null;
+let priorityLineInstance=null;
+const modal=new bootstrap.Modal(qs('#taskModal'));
+
+function uid(){return Math.random().toString(36).slice(2,9)}
+function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(tasks));render();}
+
+function renderStats(){
+  qs('#totalTasks').textContent=tasks.length;
+  const done=tasks.filter(t=>t.status==='done').length;
+  qs('#completedTasks').textContent=done;
+  const today=new Date();
+  const todayStr=`${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  qs('#dueToday').textContent=tasks.filter(t=>t.date===todayStr).length;
+  qs('#projectsCount').textContent=[...new Set(tasks.map(t=>t.project).filter(Boolean))].length;
+  qs('#progressBar').style.width=tasks.length?((done/tasks.length)*100)+'%':'0%';
+}
+
+function buildTaskCard(t){
+  const div=document.createElement('div');
+  div.className='task-card';
+  
+  // Add status-based border color
+  if(t.status==='todo') div.classList.add('todo-border');
+  if(t.status==='inprogress') div.classList.add('inprogress-border');
+  if(t.status==='done') div.classList.add('done-border');
+
+  div.draggable=true;
+  div.dataset.id=t.id;
+  div.innerHTML=`<strong>${t.title}</strong><br><small>${t.project||''}</small>`;
+  div.addEventListener('click',()=>openEdit(t));
+  div.addEventListener('dragstart',e=>e.dataTransfer.setData('text/plain',t.id));
+  return div;
+}
+
+function renderBoards(){
+  qsa('.kanban-column').forEach(col=>{
+    const zone=col.querySelector('.dropzone');
+    zone.innerHTML='';
+    tasks.filter(t=>t.status===col.dataset.status).forEach(t=>zone.appendChild(buildTaskCard(t)));
+  });
+}
+
+function renderTasksList(){
+  const container=qs('#tasksList');
+  container.innerHTML='';
+  tasks.forEach(t=>container.appendChild(buildTaskCard(t)));
+}
+
+function renderAnalytics(){
+  const donutCtx=qs('#analyticsChart');
+  const barCtx=qs('#statusBarChart');
+  const lineCtx=qs('#priorityLineChart');
+
+  if(chartInstance) chartInstance.destroy();
+  if(statusBarInstance) statusBarInstance.destroy();
+  if(priorityLineInstance) priorityLineInstance.destroy();
+
+  if(donutCtx){
+    chartInstance=new Chart(donutCtx,{
+      type:'doughnut',
+      data:{
+        labels:['Pending','Completed'],
+        datasets:[{
+          data:[
+            tasks.filter(t=>t.status!=='done').length,
+            tasks.filter(t=>t.status==='done').length
+          ],
+          backgroundColor:['#ef4444','#22c55e']
+        }]
+      },
+      options:{cutout:'65%',plugins:{legend:{position:'bottom'}}}
+    });
+  }
+
+  if(barCtx){
+    statusBarInstance=new Chart(barCtx,{
+      type:'bar',
+      data:{
+        labels:['To Do','In Progress','Done'],
+        datasets:[{
+          data:[
+            tasks.filter(t=>t.status==='todo').length,
+            tasks.filter(t=>t.status==='inprogress').length,
+            tasks.filter(t=>t.status==='done').length
+          ],
+          backgroundColor:['#ef4444','#f59e0b','#22c55e']
+        }]
+      },
+      options:{plugins:{legend:{display:false}},responsive:true}
+    });
+  }
+
+  if(lineCtx){
+    const priorityCounts=[
+      tasks.filter(t=>t.priority==='low').length,
+      tasks.filter(t=>t.priority==='medium').length,
+      tasks.filter(t=>t.priority==='high').length
+    ];
+
+    priorityLineInstance=new Chart(lineCtx,{
+      type:'line',
+      data:{
+        labels:['Low','Medium','High'],
+        datasets:[{
+          data:priorityCounts,
+          borderColor:'#6366f1',
+          backgroundColor:'rgba(99,102,241,0.2)',
+          fill:true,
+          tension:.4
+        }]
+      },
+      options:{plugins:{legend:{display:false}},responsive:true}
+    });
+  }
+}
+
+function render(){
+  renderStats();
+  renderBoards();
+  renderTasksList();
+  renderAnalytics();
+}
+
+// Navigation
+qsa('.sidebar a').forEach(link=>{
+  link.addEventListener('click',()=>{
+    qsa('.sidebar a').forEach(l=>l.classList.remove('active'));
+    link.classList.add('active');
+    qsa('.view-section').forEach(sec=>sec.classList.remove('active'));
+    qs('#'+link.dataset.view).classList.add('active');
+  });
+});
+
+// Theme
+qs('#themeToggle').addEventListener('click',()=>document.body.classList.toggle('light'));
+qs('#accentPicker').addEventListener('input',e=>{
+  document.documentElement.style.setProperty('--accent',e.target.value);
+});
+
+// Export Fix
+qs('#exportBtn').addEventListener('click',()=>{
+  const blob=new Blob([JSON.stringify(tasks,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download='tasks.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+// Modal logic
+qs('#addTaskBtn').addEventListener('click',()=>{qs('#taskId').value='';modal.show();});
+qs('#saveTaskBtn').addEventListener('click',()=>{
+  const id=qs('#taskId').value;
+  const obj={id:id||uid(),title:qs('#taskTitle').value,project:qs('#taskProject').value,date:qs('#taskDate').value,priority:qs('#taskPriority').value,status:id?tasks.find(t=>t.id===id).status:'todo'};
+  if(id){tasks=tasks.map(t=>t.id===id?obj:t);}else{tasks.unshift(obj);}modal.hide();save();
+});
+qs('#deleteTaskBtn').addEventListener('click',()=>{tasks=tasks.filter(t=>t.id!==qs('#taskId').value);modal.hide();save();});
+
+// Drag Drop
+qsa('.kanban-column').forEach(col=>{
+  col.addEventListener('dragover',e=>{e.preventDefault();});
+  col.addEventListener('drop',e=>{e.preventDefault();const id=e.dataTransfer.getData('text/plain');const task=tasks.find(t=>t.id===id);if(task){task.status=col.dataset.status;save();}});
+});
+
+if(!tasks.length){tasks=[{id:uid(),title:'Design UI',project:'Website',status:'todo'},{id:uid(),title:'Build API',project:'Backend',status:'inprogress'},{id:uid(),title:'Deploy',project:'Website',status:'done'}];save();}
+
+render();
+</script>
+
+</body>
+</html>
